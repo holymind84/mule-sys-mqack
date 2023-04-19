@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="get-auto" doc:id="3f94a97a-d94c-4eff-b664-c74367e90fe0" >
+		<http:listener doc:name="GET /auto" doc:id="677affa3-17f6-4ff2-9259-56d59b4f2114" config-ref="HTTP_Listener_config" path="/auto"/>
+		<anypoint-mq:publish doc:name="Publish" doc:id="d5cf6c41-de95-4af2-9b23-01eefb1f8d42" config-ref="Anypoint_MQ_Config_v4" destination="queue-auto">
+			<anypoint-mq:body ><![CDATA[#[output application/json
+---
+{
+	id: correlationId,
+	num: randomInt(2)
+}]]]></anypoint-mq:body>
+		</anypoint-mq:publish>
+		<logger level="INFO" doc:name="Logger" doc:id="04f8313f-8703-4f84-b7bd-c2a9b5228e59" message='#["message sent " ++ correlationId]'/>
+		<ee:transform doc:name="Transform Message" doc:id="70b2f543-ab05-41b4-af98-f662369fec99" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message: "ok",
+	corr: correlationId
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="mq-auto" doc:id="22a39930-c116-403c-8232-c074368b91f7" >
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="00565658-26e3-47b1-a6d2-2cb5abe3bda1" config-ref="Anypoint_MQ_Config_v4" destination="queue-auto">
+			<redelivery-policy maxRedeliveryCount="20" />
+		</anypoint-mq:subscriber>
+		<logger level="INFO" doc:name="Logger" doc:id="afc779bf-d1b8-4137-8f23-de4e36389cbd" message='#[output application/json&#10;---&#10;{&#10;	"where" : "mq-flow-auto",&#10;	"body" : payload&#10;}]'/>
+		<choice doc:name="Choice" doc:id="0b460afa-442f-4906-907f-d4a4204d9d1d" >
+			<when expression="#[payload.num == 0]">
+				<logger level="INFO" doc:name="OK" doc:id="9f3358b9-2661-4c54-8888-db1b4882804a" message='#[payload.id ++ " OK"]'/>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="KO" doc:id="3935024a-cbf1-4bb9-a4b7-6040e0d53616" message='#[payload.id ++ " KO"]'/>
+				<raise-error doc:name="Raise error" doc:id="0e51d857-0dfa-4388-866f-6265e6d9a819" type="CUSTOM:KO" description="Application KO"/>
+			</otherwise>
+		</choice>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="2410863f-4288-4f5e-986b-c258d3d5a007" type="MULE:REDELIVERY_EXHAUSTED">
+				<logger level="INFO" doc:name="Logger" doc:id="2bbd5161-a281-4867-bbe9-2e9aadc481d9" message='#["Redelivery Reached -&gt; Confirm Message"]'/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+</mule>
